@@ -21,6 +21,39 @@ class TargetOracle(SQLTarget):
             secret=True,  # Flag config as protected.
             description="SQLAlchemy connection string",
         ),
+        th.Property(
+            "driver_name",
+            th.StringType,
+            default="oracle+cx_oracle",
+            description="SQLAlchemy driver name",
+        ),
+        th.Property(
+            "username",
+            th.StringType,
+            secret=True,  # Flag config as protected.
+            description="Oracle username",
+        ),
+        th.Property(
+            "password",
+            th.StringType,
+            secret=True,  # Flag config as protected.
+            description="Oracle password",
+        ),
+        th.Property(
+            "host",
+            th.StringType,
+            description="Oracle host",
+        ),
+        th.Property(
+            "port",
+            th.StringType,
+            description="Oracle port",
+        ),
+        th.Property(
+            "database",
+            th.StringType,
+            description="Oracle database",
+        ),
     ).to_dict()
 
     default_sink_class = OracleSink

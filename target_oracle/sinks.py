@@ -29,8 +29,8 @@ class OracleConnector(SQLConnector):
         Args:
             config: The configuration for the connector.
         """
-        if config.get("sqlalchemy_url"):
-            return config["sqlalchemy_url"]
+        # if config.get("sqlalchemy_url"):
+        #     return config["sqlalchemy_url"]
 
         connection_url = sqlalchemy.engine.url.URL.create(
             drivername="oracle+cx_oracle",
@@ -156,7 +156,7 @@ class OracleConnector(SQLConnector):
             pass
         
         ddl = f"""
-            CREATE GLOBAL TEMPORARY TABLE {temp_table_name} AS (
+            CREATE TABLE {temp_table_name} AS (
                 SELECT * FROM {from_table_name}
                 WHERE 1=0
             )
@@ -510,6 +510,7 @@ class OracleSink(SQLSink):
             insert_records.append(insert_record)
 
         self.connection.execute(insert_sql, insert_records)
+        self.connection.execute("COMMIT")
 
         if isinstance(records, list):
             return len(records)  # If list, we can quickly return record count.

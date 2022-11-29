@@ -17,7 +17,6 @@ from target_oracle.tests.samples.sample_tap_countries.countries_tap import (
 @pytest.fixture()
 def oracle_config():
     return {
-        "sqlalchemy_url": "oracle+cx_oracle://sa:p@55w0rd@localhost:1433/master",
         "schema": "SYSTEM",
         "user": "SYSTEM",
         "password": "P@55w0rd",

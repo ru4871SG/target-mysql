@@ -29,8 +29,9 @@ class OracleConnector(SQLConnector):
         Args:
             config: The configuration for the connector.
         """
-        # if config.get("sqlalchemy_url"):
-        #     return config["sqlalchemy_url"]
+
+        if config.get("sqlalchemy_url"):
+            return config["sqlalchemy_url"]
 
         connection_url = sqlalchemy.engine.url.URL.create(
             drivername="oracle+cx_oracle",

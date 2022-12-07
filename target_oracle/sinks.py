@@ -382,11 +382,21 @@ class OracleSink(SQLSink):
         """
         # First we need to be sure the main table is already created
 
+        conformed_records = (
+            [self.conform_record(record) for record in context["records"]]
+            if isinstance(context["records"], list)
+            else (self.conform_record(record) for record in context["records"])
+        )
+
+        join_keys = [self.conform_name(key, "column") for key in self.key_properties]
+        schema = self.conform_schema(self.schema)
+
+
         if self.key_properties:
             self.logger.info(f"Preparing table {self.full_table_name}")
             self.connector.prepare_table(
                 full_table_name=self.full_table_name,
-                schema=self.schema,
+                schema=schema,
                 primary_keys=self.key_properties,
                 as_temp_table=False,
             )
@@ -404,23 +414,23 @@ class OracleSink(SQLSink):
             # Insert into temp table
             self.bulk_insert_records(
                 full_table_name=tmp_table_name,
-                schema=self.schema,
-                records=context["records"],
+                schema=schema,
+                records=conformed_records,
             )
             # Merge data from Temp table to main table
             self.logger.info(f"Merging data from temp table to {self.full_table_name}")
             self.merge_upsert_from_table(
                 from_table_name=tmp_table_name,
                 to_table_name=self.full_table_name,
-                schema=self.schema,
-                join_keys=self.key_properties,
+                schema=schema,
+                join_keys=join_keys,
             )
 
         else:
             self.bulk_insert_records(
                 full_table_name=self.full_table_name,
-                schema=self.schema,
-                records=context["records"],
+                schema=schema,
+                records=conformed_records,
             )
 
     def merge_upsert_from_table(
@@ -442,6 +452,9 @@ class OracleSink(SQLSink):
         """
         # TODO think about sql injeciton,
         # issue here https://github.com/MeltanoLabs/target-postgres/issues/22
+
+        join_keys = [self.conform_name(key, "column") for key in join_keys]
+        schema = self.conform_schema(schema)
 
         join_condition = " and ".join(
             [f"temp.{key} = target.{key}" for key in join_keys]

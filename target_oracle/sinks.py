@@ -504,10 +504,12 @@ class OracleSink(SQLSink):
 
         # temporary fix to ensure missing properties are added
         insert_records = []
+
         for record in records:
             insert_record = {}
+            conformed_record = self.conform_record(record)
             for column in columns:
-                insert_record[column.name] = record.get(column.name)
+                insert_record[column.name] = conformed_record.get(column.name)
             insert_records.append(insert_record)
 
         self.connection.execute(insert_sql, insert_records)

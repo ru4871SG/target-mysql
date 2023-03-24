@@ -54,6 +54,12 @@ class TargetOracle(SQLTarget):
             th.StringType,
             description="Oracle database",
         ),
+        th.Property(
+            "prefer_float_over_numeric",
+            th.BooleanType,
+            description="Use float data type for numbers (otherwise number type is used)",
+            default=False
+        ),
     ).to_dict()
 
     default_sink_class = OracleSink

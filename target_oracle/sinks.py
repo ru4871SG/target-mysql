@@ -64,15 +64,19 @@ class OracleConnector(SQLConnector):
                 if datelike_type == "date":
                     return cast(sqlalchemy.types.TypeEngine, sqlalchemy.types.DATE())
 
-            maxlength = jsonschema_type.get("maxLength", 2000)
+            maxlength = jsonschema_type.get("maxLength", 4000)
             return cast(
                 sqlalchemy.types.TypeEngine, sqlalchemy.types.VARCHAR(maxlength)
             )
 
         if self._jsonschema_type_check(jsonschema_type, ("integer",)):
             return cast(sqlalchemy.types.TypeEngine, sqlalchemy.types.INTEGER())
+        
         if self._jsonschema_type_check(jsonschema_type, ("number",)):
-            return cast(sqlalchemy.types.TypeEngine, sqlalchemy.types.NUMERIC(22, 16))
+            if self.config.get("prefer_float_over_numeric", False):
+                return cast(sqlalchemy.types.TypeEngine, sqlalchemy.types.FLOAT())
+            return cast(sqlalchemy.types.TypeEngine, sqlalchemy.types.NUMERIC(38, 10))
+        
         if self._jsonschema_type_check(jsonschema_type, ("boolean",)):
             return cast(sqlalchemy.types.TypeEngine, oracle.VARCHAR(1))
 

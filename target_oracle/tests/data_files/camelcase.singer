@@ -1,3 +1,0 @@
-{"type": "SCHEMA", "stream": "TESTCamelcase", "schema": {"type": "object", "properties": { "CustomerIDNumber": {"type": "string"}, "ClientNameTEXT": {"type": "string"} }}, "key_properties": ["CustomerIDNumber"]}
-{"type": "RECORD", "stream": "TESTCamelcase", "record": {"CustomerIDNumber": "1", "ClientNameTEXT": "Gitter Windows Desktop App"}}
-{"type": "RECORD", "stream": "TESTCamelcase", "record": {"CustomerIDNumber": "2", "ClientNameTEXT": "Gitter iOS App"}}

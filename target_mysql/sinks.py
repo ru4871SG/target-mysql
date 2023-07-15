@@ -1,32 +1,45 @@
-"""Oracle target sink class, which handles writing streams."""
+"""MySQL target sink class, which handles writing streams."""
 
 from __future__ import annotations
 
-from singer_sdk.sinks import SQLSink
+import json
+import logging
+import re
+import typing as t
+from typing import Any, Dict, Iterable, List, Optional, cast
+
+import sqlalchemy
 from singer_sdk.connectors import SQLConnector
 from singer_sdk.helpers._conformers import replace_leading_digit
-import sqlalchemy
-from typing import Any, Dict, Iterable, List, Optional, cast
-from sqlalchemy.dialects import oracle
 from singer_sdk.helpers._typing import get_datelike_property_type
-from sqlalchemy.schema import PrimaryKeyConstraint
+from singer_sdk.sinks import SQLSink
 from sqlalchemy import Column
-import re
+from sqlalchemy.dialects import mysql
+from sqlalchemy.engine import Engine
+from sqlalchemy.schema import PrimaryKeyConstraint
 
-class OracleConnector(SQLConnector):
-    """The connector for Oracle.
+if t.TYPE_CHECKING:
+    from sqlalchemy.engine.reflection import Inspector
+
+
+class MySQLConnector(SQLConnector):
+    """The connector for MySQL.
 
     This class handles all DDL and type conversions.
     """
 
     allow_column_add: bool = True  # Whether ADD COLUMN is supported.
     allow_column_rename: bool = True  # Whether RENAME COLUMN is supported.
-    allow_column_alter: bool = True  # Whether altering column types is supported.
-    allow_merge_upsert: bool = True  # Whether MERGE UPSERT is supported.
+    allow_column_alter: bool = False  # Whether altering column types is supported.
+    allow_merge_upsert: bool = False  # Whether MERGE UPSERT is supported.
     allow_temp_tables: bool = True  # Whether temp tables are supported.
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.logger.setLevel(logging.DEBUG)
+
     def get_sqlalchemy_url(self, config: dict) -> str:
-        """Generates a SQLAlchemy URL for Oracle.
+        """Generates a SQLAlchemy URL for MySQL.
 
         Args:
             config: The configuration for the connector.
@@ -36,7 +49,7 @@ class OracleConnector(SQLConnector):
             return config["sqlalchemy_url"]
 
         connection_url = sqlalchemy.engine.url.URL.create(
-            drivername="oracle+cx_oracle",
+            drivername="mysql",
             username=config["user"],
             password=config["password"],
             host=config["host"],
@@ -44,6 +57,80 @@ class OracleConnector(SQLConnector):
             database=config["database"],
         )
         return connection_url
+
+    @staticmethod
+    def get_fully_qualified_name(
+            table_name: str | None = None,
+            schema_name: str | None = None,
+            db_name: str | None = None,
+            delimiter: str = ".",
+    ) -> str:
+        """Concatenates a fully qualified name from the parts.
+
+        Args:
+            table_name: The name of the table.
+            schema_name: The name of the schema. Defaults to None.
+            db_name: The name of the database. Defaults to None.
+            delimiter: Generally: '.' for SQL names and '-' for Singer names.
+
+        Raises:
+            ValueError: If all 3 name parts not supplied.
+
+        Returns:
+            The fully qualified name as a string.
+        """
+        parts = []
+
+        if db_name:
+            parts.append(db_name)
+        if schema_name:
+            parts.append(schema_name)
+        if table_name:
+            parts.append(table_name)
+
+        if not parts:
+            raise ValueError(
+                "Could not generate fully qualified name: "
+                + ":".join(
+                    [
+                        db_name or "(unknown-db)",
+                        schema_name or "(unknown-schema)",
+                        table_name or "(unknown-table-name)",
+                    ],
+                ),
+            )
+
+        return delimiter.join(parts)
+
+    def get_object_names(
+            self,
+            engine: Engine,  # noqa: ARG002
+            inspected: Inspector,
+            schema_name: str,
+    ) -> list[tuple[str, bool]]:
+        """Return a list of syncable objects.
+        Args:
+            engine: SQLAlchemy engine
+            inspected: SQLAlchemy inspector instance for engine
+            schema_name: Schema name to inspect
+
+        Returns:
+            List of tuples (<table_or_view_name>, <is_view>)
+        """
+        # Get list of tables and views
+        table_names = inspected.get_table_names(schema=schema_name)
+        try:
+            view_names = inspected.get_view_names(schema=schema_name)
+        except NotImplementedError:
+            # Some DB providers do not understand 'views'
+            self._warn_no_view_detection()
+            view_names = []
+
+        objects = [(t, False) for t in table_names] + [(v, True) for v in view_names]
+        if self.config.get("lower_case_table_names", True):
+            objects = [x.lower() for x in objects]
+
+        return objects
 
     def to_sql_type(self, jsonschema_type: dict) -> sqlalchemy.types.TypeEngine:  # noqa
         """Convert JSON Schema type to a SQL type.
@@ -64,33 +151,32 @@ class OracleConnector(SQLConnector):
                 if datelike_type == "date":
                     return cast(sqlalchemy.types.TypeEngine, sqlalchemy.types.DATE())
 
-            maxlength = jsonschema_type.get("maxLength", 4000)
+            maxlength = jsonschema_type.get("maxLength", 255)
             return cast(
                 sqlalchemy.types.TypeEngine, sqlalchemy.types.VARCHAR(maxlength)
             )
 
         if self._jsonschema_type_check(jsonschema_type, ("integer",)):
             return cast(sqlalchemy.types.TypeEngine, sqlalchemy.types.INTEGER())
-        
+
         if self._jsonschema_type_check(jsonschema_type, ("number",)):
             if self.config.get("prefer_float_over_numeric", False):
                 return cast(sqlalchemy.types.TypeEngine, sqlalchemy.types.FLOAT())
             return cast(sqlalchemy.types.TypeEngine, sqlalchemy.types.NUMERIC(38, 10))
-        
+
         if self._jsonschema_type_check(jsonschema_type, ("boolean",)):
-            return cast(sqlalchemy.types.TypeEngine, oracle.VARCHAR(1))
+            return cast(sqlalchemy.types.TypeEngine, mysql.VARCHAR(1))
 
         if self._jsonschema_type_check(jsonschema_type, ("object",)):
-            return cast(sqlalchemy.types.TypeEngine, sqlalchemy.types.VARCHAR(2000))
+            return cast(sqlalchemy.types.TypeEngine, sqlalchemy.types.TEXT(4000))
 
         if self._jsonschema_type_check(jsonschema_type, ("array",)):
-            return cast(sqlalchemy.types.TypeEngine, sqlalchemy.types.VARCHAR(2000))
+            return cast(sqlalchemy.types.TypeEngine, sqlalchemy.types.TEXT(4000))
 
-        return cast(sqlalchemy.types.TypeEngine, sqlalchemy.types.VARCHAR(2000))
-
+        return cast(sqlalchemy.types.TypeEngine, sqlalchemy.types.TEXT(4000))
 
     def _jsonschema_type_check(
-        self, jsonschema_type: dict, type_check: tuple[str]
+            self, jsonschema_type: dict, type_check: tuple[str]
     ) -> bool:
         """Return True if the jsonschema_type supports the provided type.
         Args:
@@ -113,12 +199,11 @@ class OracleConnector(SQLConnector):
 
         return False
 
-
     def _create_empty_column(
-        self,
-        full_table_name: str,
-        column_name: str,
-        sql_type: sqlalchemy.types.TypeEngine,
+            self,
+            full_table_name: str,
+            column_name: str,
+            sql_type: sqlalchemy.types.TypeEngine,
     ) -> None:
         """Create a new column.
         Args:
@@ -133,6 +218,7 @@ class OracleConnector(SQLConnector):
 
         if column_name.startswith("_"):
             column_name = f"x{column_name}"
+
         create_column_clause = sqlalchemy.schema.CreateColumn(
             sqlalchemy.Column(
                 column_name,
@@ -142,8 +228,8 @@ class OracleConnector(SQLConnector):
 
         try:
             self.connection.execute(
-                f"""ALTER TABLE { str(full_table_name) }
-                ADD { str(create_column_clause) } """
+                f"""ALTER TABLE {str(full_table_name)}
+                ADD COLUMN {str(create_column_clause)} """
             )
 
         except Exception as e:
@@ -161,7 +247,7 @@ class OracleConnector(SQLConnector):
             )
         except Exception as e:
             pass
-        
+
         ddl = f"""
             CREATE TABLE {temp_table_name} AS (
                 SELECT * FROM {from_table_name}
@@ -172,12 +258,12 @@ class OracleConnector(SQLConnector):
         self.connection.execute(ddl)
 
     def create_empty_table(
-        self,
-        full_table_name: str,
-        schema: dict,
-        primary_keys: list[str] | None = None,
-        partition_keys: list[str] | None = None,
-        as_temp_table: bool = False,
+            self,
+            full_table_name: str,
+            schema: dict,
+            primary_keys: list[str] | None = None,
+            partition_keys: list[str] | None = None,
+            as_temp_table: bool = False,
     ) -> None:
         """Create an empty target table.
         Args:
@@ -214,7 +300,7 @@ class OracleConnector(SQLConnector):
                     self.to_sql_type(property_jsonschema)
                 )
             )
-        
+
         if primary_keys:
             pk_constraint = PrimaryKeyConstraint(*primary_keys, name=f"{table_name}_PK")
             _ = sqlalchemy.Table(table_name, meta, *columns, pk_constraint)
@@ -223,9 +309,8 @@ class OracleConnector(SQLConnector):
 
         meta.create_all(self._engine)
 
-
     def merge_sql_types(  # noqa
-        self, sql_types: list[sqlalchemy.types.TypeEngine]
+            self, sql_types: list[sqlalchemy.types.TypeEngine]
     ) -> sqlalchemy.types.TypeEngine:  # noqa
         """Return a compatible SQL type for the selected type list.
         Args:
@@ -269,27 +354,34 @@ class OracleConnector(SQLConnector):
             opt_len: int = getattr(opt, "length", 0)
             generic_type = type(opt.as_generic())
 
+            current_type_length = 0
+            if (isinstance(current_type, sqlalchemy.types.TEXT) and current_type.length is None):
+                current_type_length = 65535
+            elif (not isinstance(current_type, sqlalchemy.types.DECIMAL)):
+                current_type_length = current_type.length
+
             if isinstance(generic_type, type):
                 if issubclass(
-                    generic_type,
-                    (sqlalchemy.types.String, sqlalchemy.types.Unicode),
+                        generic_type,
+                        (sqlalchemy.types.String, sqlalchemy.types.Unicode),
                 ):
                     # If length None or 0 then is varchar max ?
                     if (
-                        (opt_len is None)
-                        or (opt_len == 0)
-                        or (opt_len >= current_type.length)
+                            (opt_len is None)
+                            or (opt_len == 0)
+                            or (opt_len >= current_type_length)
                     ):
                         return opt
                 elif isinstance(
-                    generic_type,
-                    (sqlalchemy.types.String, sqlalchemy.types.Unicode),
+                        generic_type,
+                        (sqlalchemy.types.String, sqlalchemy.types.Unicode),
                 ):
                     # If length None or 0 then is varchar max ?
                     if (
-                        (opt_len is None)
-                        or (opt_len == 0)
-                        or (opt_len >= current_type.length)
+                            (opt_len is None)
+                            or (current_type is None)
+                            or (opt_len == 0)
+                            or (opt_len >= current_type_length)
                     ):
                         return opt
                 # If best conversion class is equal to current type
@@ -301,12 +393,11 @@ class OracleConnector(SQLConnector):
             f"Unable to merge sql types: {', '.join([str(t) for t in sql_types])}"
         )
 
-
     def _adapt_column_type(
-        self,
-        full_table_name: str,
-        column_name: str,
-        sql_type: sqlalchemy.types.TypeEngine,
+            self,
+            full_table_name: str,
+            column_name: str,
+            sql_type: sqlalchemy.types.TypeEngine,
     ) -> None:
         """Adapt table column type to support the new JSON schema type.
         Args:
@@ -342,8 +433,10 @@ class OracleConnector(SQLConnector):
             )
         try:
             self.connection.execute(
-                f"""ALTER TABLE { str(full_table_name) }
-                MODIFY ({ str(column_name) } { str(compatible_sql_type) })"""
+                # f"""ALTER TABLE { str(full_table_name) }
+                # MODIFY ({ str(column_name) } { str(compatible_sql_type) })"""
+                f"""ALTER TABLE {str(full_table_name)}
+                MODIFY {str(column_name)} {str(compatible_sql_type)}"""
             )
         except Exception as e:
             raise RuntimeError(
@@ -352,32 +445,37 @@ class OracleConnector(SQLConnector):
             ) from e
 
 
-class OracleSink(SQLSink):
-    """Oracle target sink class."""
+class MySQLSink(SQLSink):
+    """MySQL target sink class."""
+
+    connector_class = MySQLConnector
 
     soft_delete_column_name = "x_sdc_deleted_at"
     version_column_name = "x_sdc_table_version"
-    connector_class = OracleConnector
 
-    @property
-    def schema_name(self) -> Optional[str]:
-        """Return the schema name or `None` if using names with no schema part.
-        Returns:
-            The target schema name.
-        """
-        # Look for a default_target_scheme in the configuraion fle
-        default_target_schema: str = self.config.get("default_target_schema", None)
-        parts = self.stream_name.split("-")
+    # @property
+    # def schema_name(self) -> Optional[str]:
+    #     """Return the schema name or `None` if using names with no schema part.
+    #     Returns:
+    #         The target schema name.
+    #     """
+    #     # Look for a default_target_scheme in the configuraion fle
+    #     default_target_schema: str = self.config.get("default_target_schema", None)
+    #     parts = self.stream_name.split("-")
 
-        # 1) When default_target_scheme is in the configuration use it
-        # 2) if the streams are in <schema>-<table> format use the
-        #    stream <schema>
-        # 3) Return None if you don't find anything
-        if default_target_schema:
-            return default_target_schema
+    #     # 1) When default_target_scheme is in the configuration use it
+    #     # 2) if the streams are in <schema>-<table> format use the
+    #     #    stream <schema>
+    #     # 3) Return None if you don't find anything
+    #     if default_target_schema:
+    #         return default_target_schema
 
-        # Schema name not detected.
-        return None
+    #     # Schema name not detected.
+    #     return None
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.logger.setLevel(logging.DEBUG)
 
     def process_batch(self, context: dict) -> None:
         """Process a batch with the given batch context.
@@ -397,7 +495,6 @@ class OracleSink(SQLSink):
         join_keys = [self.conform_name(key, "column") for key in self.key_properties]
         schema = self.conform_schema(self.schema)
 
-
         if self.key_properties:
             self.logger.info(f"Preparing table {self.full_table_name}")
             self.connector.prepare_table(
@@ -415,7 +512,6 @@ class OracleSink(SQLSink):
                 from_table_name=self.full_table_name,
                 temp_table_name=tmp_table_name
             )
-
 
             # Insert into temp table
             self.bulk_insert_records(
@@ -439,13 +535,12 @@ class OracleSink(SQLSink):
                 records=conformed_records,
             )
 
-    def merge_upsert_from_table(
-        self,
-        from_table_name: str,
-        to_table_name: str,
-        schema: dict,
-        join_keys: List[str],
-    ) -> Optional[int]:
+    def merge_upsert_from_table(self,
+                                from_table_name: str,
+                                to_table_name: str,
+                                schema: dict,
+                                join_keys: List[str],
+                                ) -> Optional[int]:
         """Merge upsert data from one table to another.
         Args:
             from_table_name: The source table name.
@@ -466,25 +561,20 @@ class OracleSink(SQLSink):
             [f"temp.{key} = target.{key}" for key in join_keys]
         )
 
-        update_stmt = ", ".join(
-            [
-                f"target.{key} = temp.{key}"
-                for key in schema["properties"].keys()
-                if key not in join_keys
-            ]
-        )  # noqa
+        upsert_on_condition = " and ".join(
+            [f"{key} = VALUES({key})" for key in join_keys]
+        )
 
         merge_sql = f"""
-            MERGE INTO {to_table_name} target
-            USING {from_table_name} temp
-            ON ({join_condition})
-            WHEN MATCHED THEN
-                UPDATE SET
-                    { update_stmt }
-            WHEN NOT MATCHED THEN
-                INSERT ({", ".join(schema["properties"].keys())})
-                VALUES ({", ".join([f"temp.{key}" for key in schema["properties"].keys()])})
+            INSERT INTO {to_table_name} ({", ".join(schema["properties"].keys())})
+                SELECT {", ".join(schema["properties"].keys())}
+                FROM 
+                    {from_table_name} temp
+            ON DUPLICATE KEY UPDATE 
+                {upsert_on_condition}
         """
+
+        self.logger.info("Merging with SQL: %s", merge_sql)
 
         self.connection.execute(merge_sql)
 
@@ -493,10 +583,10 @@ class OracleSink(SQLSink):
         self.connection.execute(f"DROP TABLE {from_table_name}")
 
     def bulk_insert_records(
-        self,
-        full_table_name: str,
-        schema: dict,
-        records: Iterable[Dict[str, Any]],
+            self,
+            full_table_name: str,
+            schema: dict,
+            records: Iterable[Dict[str, Any]],
     ) -> Optional[int]:
         """Bulk insert records to an existing destination table.
         The default implementation uses a generic SQLAlchemy bulk insert operation.
@@ -528,7 +618,13 @@ class OracleSink(SQLSink):
             insert_record = {}
             conformed_record = self.conform_record(record)
             for column in columns:
-                insert_record[column.name] = conformed_record.get(column.name)
+                # insert_record[column.name] = conformed_record.get(column.name)
+
+                val = conformed_record.get(column.name)
+                if (isinstance(val, Dict) or isinstance(val, List)):
+                    val = json.dumps(val)
+
+                insert_record[column.name] = val
             insert_records.append(insert_record)
 
         self.connection.execute(insert_sql, insert_records)
@@ -539,10 +635,9 @@ class OracleSink(SQLSink):
 
         return None  # Unknown record count.
 
-
     def column_representation(
-        self,
-        schema: dict,
+            self,
+            schema: dict,
     ) -> List[Column]:
         """Returns a sql alchemy table representation for the current schema."""
         columns: list[Column] = []
@@ -555,7 +650,6 @@ class OracleSink(SQLSink):
                 )
             )
         return columns
-
 
     def snakecase(self, name):
         name = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", name)
@@ -590,5 +684,3 @@ class OracleSink(SQLSink):
         name = self.snakecase(name)
         # replace leading digit
         return replace_leading_digit(name)
-
-

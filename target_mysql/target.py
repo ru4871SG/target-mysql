@@ -1,19 +1,20 @@
-"""Oracle target class."""
+"""MySQL target class."""
 
 from __future__ import annotations
 
-from singer_sdk.target_base import SQLTarget
 from singer_sdk import typing as th
+from singer_sdk.target_base import SQLTarget
 
-from target_oracle.sinks import (
-    OracleSink,
+from target_mysql.sinks import (
+    MySQLSink,
 )
 
 
-class TargetOracle(SQLTarget):
-    """Sample target for Oracle."""
+class TargetMySQL(SQLTarget):
+    """Sample target for MySQL."""
 
-    name = "target-oracle"
+    name = "target-mysql"
+
     config_jsonschema = th.PropertiesList(
         th.Property(
             "sqlalchemy_url",
@@ -24,46 +25,52 @@ class TargetOracle(SQLTarget):
         th.Property(
             "driver_name",
             th.StringType,
-            default="oracle+cx_oracle",
+            default="mysql",
             description="SQLAlchemy driver name",
         ),
         th.Property(
             "username",
             th.StringType,
             secret=True,  # Flag config as protected.
-            description="Oracle username",
+            description="MySQL username",
         ),
         th.Property(
             "password",
             th.StringType,
             secret=True,  # Flag config as protected.
-            description="Oracle password",
+            description="MySQL password",
         ),
         th.Property(
             "host",
             th.StringType,
-            description="Oracle host",
+            description="MySQL host",
         ),
         th.Property(
             "port",
             th.StringType,
-            description="Oracle port",
+            description="MySQL port",
         ),
         th.Property(
             "database",
             th.StringType,
-            description="Oracle database",
+            description="MySQL database",
         ),
         th.Property(
-            "prefer_float_over_numeric",
+            "lower_case_table_names",
             th.BooleanType,
-            description="Use float data type for numbers (otherwise number type is used)",
-            default=False
-        ),
+            description="MySQL database",
+            default=True
+        )
+        # th.Property(
+        #     "prefer_float_over_numeric",
+        #     th.BooleanType,
+        #     description="Use float data type for numbers (otherwise number type is used)",
+        #     default=False
+        # ),
     ).to_dict()
 
-    default_sink_class = OracleSink
+    default_sink_class = MySQLSink
 
 
 if __name__ == "__main__":
-    TargetOracle.cli()
+    TargetMySQL.cli()

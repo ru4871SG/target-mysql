@@ -1,14 +1,14 @@
 version: 1
 send_anonymous_usage_stats: true
-project_id: "target-oracle"
+project_id: "target-mysql"
 default_environment: test
 environments:
 - name: test
 plugins:
   extractors: []
   loaders:
-  - name: "target-oracle"
-    namespace: "target_oracle"
+  - name: "target-mysql"
+    namespace: "target_mysql"
     pip_url: -e .
     capabilities:
     - about

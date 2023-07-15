@@ -1,6 +1,7 @@
-# target-oracle
+# target-mysql
 
-`target-oracle` is a Singer target for Oracle.
+`target-mysql` is a Singer target for MySQL.
+(forked from [radbrt/target-oracle](https://github.com/radbrt/target-oracle))
 
 Build with the [Meltano Target SDK](https://sdk.meltano.com).
 
@@ -13,13 +14,13 @@ Developer TODO: Update the below as needed to correctly describe the install pro
 Install from PyPi:
 
 ```bash
-pipx install target-oracle
+pipx install target-mysql
 ```
 
 Install from GitHub:
 
 ```bash
-pipx install git+https://github.com/ORG_NAME/target-oracle.git@main
+pipx install git+https://github.com/ORG_NAME/target-mysql.git@main
 ```
 
 -->
@@ -34,7 +35,7 @@ Developer TODO: Provide a list of config options accepted by the target.
 This section can be created by copy-pasting the CLI output from:
 
 ```
-target-oracle --about --format=markdown
+target-mysql --about --format=markdown
 ```
 -->
 
@@ -42,7 +43,7 @@ A full list of supported settings and capabilities for this
 target is available by running:
 
 ```bash
-target-oracle --about
+target-mysql --about
 ```
 
 ### Configure using environment variables
@@ -59,15 +60,15 @@ Developer TODO: If your target requires special access on the destination system
 
 ## Usage
 
-You can easily run `target-oracle` by itself or in a pipeline using [Meltano](https://meltano.com/).
+You can easily run `target-mysql` by itself or in a pipeline using [Meltano](https://meltano.com/).
 
 ### Executing the Target Directly
 
 ```bash
-target-oracle --version
-target-oracle --help
+target-mysql --version
+target-mysql --help
 # Test using the "Carbon Intensity" sample:
-tap-carbon-intensity | target-oracle --config /path/to/target-oracle-config.json
+tap-carbon-intensity | target-mysql --config /path/to/target-mysql-config.json
 ```
 
 ## Developer Resources
@@ -83,17 +84,17 @@ poetry install
 
 ### Create and Run Tests
 
-Create tests within the `target_oracle/tests` subfolder and
+Create tests within the `target_mysql/tests` subfolder and
   then run:
 
 ```bash
 poetry run pytest
 ```
 
-You can also test the `target-oracle` CLI interface directly using `poetry run`:
+You can also test the `target-mysql` CLI interface directly using `poetry run`:
 
 ```bash
-poetry run target-oracle --help
+poetry run target-mysql --help
 ```
 
 ### Testing with [Meltano](https://meltano.com/)
@@ -113,7 +114,7 @@ Next, install Meltano (if you haven't already) and any needed plugins:
 # Install meltano
 pipx install meltano
 # Initialize meltano within this directory
-cd target-oracle
+cd target-mysql
 meltano install
 ```
 
@@ -121,9 +122,9 @@ Now you can test and orchestrate using Meltano:
 
 ```bash
 # Test invocation:
-meltano invoke target-oracle --version
+meltano invoke target-mysql --version
 # OR run a test `elt` pipeline with the Carbon Intensity sample tap:
-meltano elt tap-carbon-intensity target-oracle
+meltano elt tap-carbon-intensity target-mysql
 ```
 
 ### SDK Dev Guide

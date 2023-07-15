@@ -9,7 +9,7 @@ from typing import List
 from singer_sdk import Stream, Tap
 from singer_sdk.typing import PropertiesList
 
-from target_oracle.tests.samples.sample_tap_countries.countries_streams import (
+from target_mysql.tests.samples.sample_tap_countries.countries_streams import (
     ContinentsStream,
     CountriesStream,
 )

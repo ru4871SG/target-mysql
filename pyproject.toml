@@ -2,7 +2,7 @@
 name = "target-mysql"
 version = "0.0.1"
 description = "`target-mysql` is a Singer target for MySQL, built with the Meltano Singer SDK."
-authors = ["thkwag@gmail.com"]
+authors = ["Taehwan Kwag <thkwag@gmail.com>"]
 keywords = [
     "ELT",
     "MySQL",

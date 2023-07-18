@@ -17,14 +17,16 @@ plugins:
     config:
       start_date: '2010-01-01T00:00:00Z'
     settings:
-    # TODO: To configure using Meltano, declare settings and their types here:
     - name: sqlalchemy_url
       kind: password
+    - name: driver_name
     - name: username
     - name: password
       kind: password
     - name: host
     - name: port
     - name: database
+    - name: lower_case_table_names
+    - name: allow_column_alter
     - name: start_date
       value: '2010-01-01T00:00:00Z'

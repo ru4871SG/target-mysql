@@ -1,13 +1,20 @@
 [tool.poetry]
-name = "target-mysql"
-version = "0.0.1"
+name = "thk-target-mysql"
+version = "0.1.1"
 description = "`target-mysql` is a Singer target for MySQL, built with the Meltano Singer SDK."
 authors = ["Taehwan Kwag <thkwag@gmail.com>"]
 keywords = [
     "ELT",
     "MySQL",
+    "Singer",
+    "Meltano"
 ]
 license = "Apache 2.0"
+packages = [
+    { include = "target_mysql" }
+]
+readme = ["README.md"]
+repository = "https://github.com/thkwag/target-mysql"
 
 [tool.poetry.dependencies]
 python = "<=3.11.4,>=3.8.1"
@@ -32,7 +39,7 @@ multi_line_output = 3 # Vertical Hanging Indent
 src_paths = "target_mysql"
 
 [build-system]
-requires = ["poetry-core>=1.0.8"]
+requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]

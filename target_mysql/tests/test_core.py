@@ -1,6 +1,8 @@
 """ Attempt at making some standard Target Tests. """
-# flake8: noqa
 import io
+import json
+# flake8: noqa
+import os
 from contextlib import redirect_stdout
 from pathlib import Path
 
@@ -17,28 +19,17 @@ from target_mysql.tests.samples.sample_tap_countries.countries_tap import (
     SampleTapCountries,
 )
 
+parent_directory = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../tests/"))
+config_path = os.path.join(parent_directory, "config.json")
+
+with open(config_path, "r") as f:
+    config_data = json.load(f)
+
 
 @pytest.fixture()
 def mysql_config():
-    return {
-        "schema": "test",
-        "user": "test",
-        "password": "Un1BiATNSw6Q1co",
-        "host": "127.0.0.1",
-        "port": "3306",
-        "database": "test",
-        "prefer_float_over_numeric": False,
-        "lower_case_table_names": True
-    }
+    return config_data
 
-mysql_config_dict = {
-        "schema": "test",
-        "user": "test",
-        "password": "Un1BiATNSw6Q1co",
-        "host": "127.0.0.1",
-        "port": "3306",
-        "database": "test",
-    }
 
 @pytest.fixture
 def mysql_target(mysql_config) -> TargetMySQL:
@@ -52,7 +43,7 @@ def singer_file_to_target(file_name, target) -> None:
     not good very large files.
     Args:
         file_name: name to file in .tests/data_files to be sent into target
-        Target: Target to pass data from file_path into..
+        target: Target to pass data from file_path into..
     """
     file_path = Path(__file__).parent / Path("./data_files") / Path(file_name)
     buf = io.StringIO()
@@ -64,21 +55,21 @@ def singer_file_to_target(file_name, target) -> None:
     buf.seek(0)
     target.listen(buf)
 
-def get_engine():
-    config = mysql_config_dict
 
+def get_engine():
     connection_url = sqlalchemy.engine.url.URL.create(
-            drivername="mysql",
-            username=config["user"],
-            password=config["password"],
-            host=config["host"],
-            port=config["port"],
-            database=config["database"],
-        )
+        drivername="mysql",
+        username=config_data["user"],
+        password=config_data["password"],
+        host=config_data["host"],
+        port=config_data["port"],
+        database=config_data["database"],
+    )
 
     engine = create_engine(connection_url)
 
     return engine
+
 
 def get_row_count(table_name):
     engine = get_engine()
@@ -101,7 +92,7 @@ def get_table_cols(table_name):
     AND TABLE_NAME='{table_name}'
     ORDER BY ORDINAL_POSITION;
     """
-    columns = [ col[0] for col in engine.execute(q).fetchall()]
+    columns = [col[0] for col in engine.execute(q).fetchall()]
     return columns
 
 
@@ -114,6 +105,7 @@ def test_countries_to_mysql(mysql_config):
     tap = SampleTapCountries(config={}, state=None)
     target = TargetMySQL(config=mysql_config)
     sync_end_to_end(tap, target)
+
 
 # TODO
 @pytest.mark.skip("SQLalchemy and object column types don't work well together")
@@ -174,6 +166,7 @@ def test_special_chars_in_attributes(mysql_target):
         file_name = "special_chars_in_attributes.singer"
         singer_file_to_target(file_name, mysql_target)
 
+
 # test that data is correctly set
 def test_optional_attributes(mysql_target):
     file_name = "optional_attributes.singer"
@@ -188,9 +181,16 @@ def test_schema_no_properties(mysql_target):
 
 # test that data is correct
 def test_schema_updates(mysql_target):
-    file_name = "schema_updates.singer"
-    singer_file_to_target(file_name, mysql_target)
+    allow_column_alter = False
+    if "allow_column_alter" in config_data:
+        allow_column_alter = config_data["allow_column_alter"]
 
+    file_name = "schema_updates.singer"
+    if allow_column_alter:
+        singer_file_to_target(file_name, mysql_target)
+    else:
+        with pytest.raises(NotImplementedError) as e_info:
+            singer_file_to_target(file_name, mysql_target)
 
 # test that data is correct
 def test_multiple_state_messages(mysql_target):
@@ -216,10 +216,12 @@ def test_no_primary_keys(mysql_target):
     file_name = "no_primary_keys_append.singer"
     singer_file_to_target(file_name, mysql_target)
 
+
 # test that data is correct
 def test_duplicate_records(mysql_target):
     file_name = "duplicate_records.singer"
     singer_file_to_target(file_name, mysql_target)
+
 
 # test that data is correct
 def test_update_records(mysql_target):
@@ -237,6 +239,7 @@ def test_array_data(mysql_target):
 def test_encoded_string_data(mysql_target):
     file_name = "encoded_strings.singer"
     singer_file_to_target(file_name, mysql_target)
+
 
 @pytest.mark.skip(reason="Something about objects not supported")
 def test_tap_appl(mysql_target):
@@ -271,6 +274,7 @@ def test_illegal_colnames(mysql_target):
     with pytest.raises(MissingKeyPropertiesError) as e_info:
         file_name = "illegal_colnames.singer"
         singer_file_to_target(file_name, mysql_target)
+
 
 def test_numerics(mysql_target):
     file_name = "numerics.singer"

@@ -38,6 +38,10 @@ class MySQLConnector(SQLConnector):
         super().__init__(*args, **kwargs)
         self.logger.setLevel(logging.DEBUG)
 
+        if "allow_column_alter" in super().config:
+            self.allow_column_alter = super().config.get("allow_column_alter")
+
+
     def get_sqlalchemy_url(self, config: dict) -> str:
         """Generates a SQLAlchemy URL for MySQL.
 
@@ -144,31 +148,66 @@ class MySQLConnector(SQLConnector):
             if datelike_type:
                 if datelike_type == "date-time":
                     return cast(
-                        sqlalchemy.types.TypeEngine, sqlalchemy.types.TIMESTAMP()
+                        sqlalchemy.types.TypeEngine, mysql.DATETIME()
                     )
-                if datelike_type in "time":
-                    return cast(sqlalchemy.types.TypeEngine, sqlalchemy.types.TIME())
-                if datelike_type == "date":
-                    return cast(sqlalchemy.types.TypeEngine, sqlalchemy.types.DATE())
+                elif datelike_type in "time":
+                    return cast(sqlalchemy.types.TypeEngine, mysql.TIME())
+                elif datelike_type == "date":
+                    return cast(sqlalchemy.types.TypeEngine, mysql.DATE())
+                elif datelike_type == "binary":
+                    return cast(sqlalchemy.types.TypeEngine, mysql.BINARY())
 
             maxlength = jsonschema_type.get("maxLength", 255)
-            return cast(
-                sqlalchemy.types.TypeEngine, sqlalchemy.types.VARCHAR(maxlength)
-            )
+            data_type = mysql.VARCHAR(maxlength)
+            if maxlength <= 255:
+                return cast(sqlalchemy.types.TypeEngine, mysql.VARCHAR(maxlength))
+            elif maxlength <= 65535:
+                return cast(sqlalchemy.types.TypeEngine, mysql.TEXT(maxlength))
+            elif maxlength <= 16777215:
+                return cast(sqlalchemy.types.TypeEngine, mysql.MEDIUMTEXT())
+            elif maxlength <= 4294967295:
+                return cast(sqlalchemy.types.TypeEngine, mysql.LONGTEXT())
+
+            return cast(sqlalchemy.types.TypeEngine, data_type)
 
         if self._jsonschema_type_check(jsonschema_type, ("integer",)):
-            return cast(sqlalchemy.types.TypeEngine, sqlalchemy.types.INTEGER())
+            minimum = jsonschema_type.get("minimum", -2147483648)
+            maximum = jsonschema_type.get("maximum", 2147483647)
+
+            if minimum >= -128 and maximum <= 127:
+                return cast(sqlalchemy.types.TypeEngine, mysql.TINYINT(unsigned=False))
+            elif minimum >= -32768 and maximum <= 32767:
+                return cast(sqlalchemy.types.TypeEngine, mysql.SMALLINT(unsigned=False))
+            elif minimum >= -8388608 and maximum <= 8388607:
+                return cast(sqlalchemy.types.TypeEngine, mysql.MEDIUMINT(unsigned=False))
+            elif minimum >= -2147483648 and maximum <= 2147483647:
+                return cast(sqlalchemy.types.TypeEngine, mysql.INTEGER(unsigned=False))
+            elif minimum >= -9223372036854775808 and maximum <= 9223372036854775807:
+                return cast(sqlalchemy.types.TypeEngine, mysql.BIGINT(unsigned=False))
+            elif minimum >= 0 and maximum <= 255:
+                return cast(sqlalchemy.types.TypeEngine, mysql.TINYINT(unsigned=True))
+            elif minimum >= 0 and maximum <= 65535:
+                return cast(sqlalchemy.types.TypeEngine, mysql.SMALLINT(unsigned=True))
+            elif minimum >= 0 and maximum <= 16777215:
+                return cast(sqlalchemy.types.TypeEngine, mysql.MEDIUMINT(unsigned=True))
+            elif minimum >= 0 and maximum <= 4294967295:
+                return cast(sqlalchemy.types.TypeEngine, mysql.INTEGER(unsigned=True))
+            elif minimum >= 0 and maximum <= 18446744073709551615:
+                return cast(sqlalchemy.types.TypeEngine, mysql.BIGINT(unsigned=True))
 
         if self._jsonschema_type_check(jsonschema_type, ("number",)):
-            if self.config.get("prefer_float_over_numeric", False):
-                return cast(sqlalchemy.types.TypeEngine, sqlalchemy.types.FLOAT())
-            return cast(sqlalchemy.types.TypeEngine, sqlalchemy.types.NUMERIC(38, 10))
+            if 'multipleOf' in jsonschema_type:
+                return cast(sqlalchemy.types.TypeEngine, mysql.DECIMAL())
+            else:
+                return cast(sqlalchemy.types.TypeEngine, mysql.types.FLOAT())
 
         if self._jsonschema_type_check(jsonschema_type, ("boolean",)):
-            return cast(sqlalchemy.types.TypeEngine, mysql.VARCHAR(1))
+            return cast(sqlalchemy.types.TypeEngine, mysql.BOOLEAN())
 
         if self._jsonschema_type_check(jsonschema_type, ("object",)):
-            return cast(sqlalchemy.types.TypeEngine, sqlalchemy.types.TEXT(4000))
+            # if 'format' in jsonschema_type and jsonschema_type.get("format") == "spatial":
+            #     return cast(sqlalchemy.types.TypeEngine, mysql.MU)
+            return cast(sqlalchemy.types.TypeEngine, mysql.JSON())
 
         if self._jsonschema_type_check(jsonschema_type, ("array",)):
             return cast(sqlalchemy.types.TypeEngine, sqlalchemy.types.TEXT(4000))
@@ -227,11 +266,10 @@ class MySQLConnector(SQLConnector):
         )
 
         try:
-            self.connection.execute(
-                f"""ALTER TABLE {str(full_table_name)}
+            alter_sql = f"""ALTER TABLE {str(full_table_name)}
                 ADD COLUMN {str(create_column_clause)} """
-            )
-
+            self.logger.info("Altering with SQL: %s", alter_sql)
+            self.connection.execute(alter_sql)
         except Exception as e:
             raise RuntimeError(
                 f"Could not create column '{create_column_clause}' "
@@ -355,9 +393,9 @@ class MySQLConnector(SQLConnector):
             generic_type = type(opt.as_generic())
 
             current_type_length = 0
-            if (isinstance(current_type, sqlalchemy.types.TEXT) and current_type.length is None):
+            if isinstance(current_type, sqlalchemy.types.TEXT) and current_type.length is None:
                 current_type_length = 65535
-            elif (not isinstance(current_type, sqlalchemy.types.DECIMAL)):
+            elif hasattr(current_type, 'length'):
                 current_type_length = current_type.length
 
             if isinstance(generic_type, type):
@@ -432,12 +470,10 @@ class MySQLConnector(SQLConnector):
                 f"from '{current_type}' to '{compatible_sql_type}'."
             )
         try:
-            self.connection.execute(
-                # f"""ALTER TABLE { str(full_table_name) }
-                # MODIFY ({ str(column_name) } { str(compatible_sql_type) })"""
-                f"""ALTER TABLE {str(full_table_name)}
+            alter_sql = f"""ALTER TABLE {str(full_table_name)}
                 MODIFY {str(column_name)} {str(compatible_sql_type)}"""
-            )
+            self.logger.info("Altering with SQL: %s", alter_sql)
+            self.connection.execute(alter_sql)
         except Exception as e:
             raise RuntimeError(
                 f"Could not convert column '{full_table_name}.{column_name}' "

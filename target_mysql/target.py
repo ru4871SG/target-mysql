@@ -58,15 +58,15 @@ class TargetMySQL(SQLTarget):
         th.Property(
             "lower_case_table_names",
             th.BooleanType,
-            description="MySQL database",
+            description="Lower case table names",
             default=True
+        ),
+        th.Property(
+            "allow_column_alter",
+            th.BooleanType,
+            description="Allow column alter",
+            default=False
         )
-        # th.Property(
-        #     "prefer_float_over_numeric",
-        #     th.BooleanType,
-        #     description="Use float data type for numbers (otherwise number type is used)",
-        #     default=False
-        # ),
     ).to_dict()
 
     default_sink_class = MySQLSink

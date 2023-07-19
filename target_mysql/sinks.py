@@ -15,7 +15,7 @@ from singer_sdk.helpers._typing import get_datelike_property_type
 from singer_sdk.sinks import SQLSink
 from sqlalchemy import Column
 from sqlalchemy.dialects import mysql
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Engine, URL
 from sqlalchemy.schema import PrimaryKeyConstraint
 
 if t.TYPE_CHECKING:
@@ -41,8 +41,7 @@ class MySQLConnector(SQLConnector):
         if "allow_column_alter" in super().config:
             self.allow_column_alter = super().config.get("allow_column_alter")
 
-
-    def get_sqlalchemy_url(self, config: dict) -> str:
+    def get_sqlalchemy_url(self, config: dict) -> URL:
         """Generates a SQLAlchemy URL for MySQL.
 
         Args:
@@ -52,7 +51,7 @@ class MySQLConnector(SQLConnector):
         if config.get("sqlalchemy_url"):
             return config["sqlalchemy_url"]
 
-        connection_url = sqlalchemy.engine.url.URL.create(
+        return sqlalchemy.engine.url.URL.create(
             drivername="mysql",
             username=config["user"],
             password=config["password"],
@@ -60,7 +59,6 @@ class MySQLConnector(SQLConnector):
             port=config["port"],
             database=config["database"],
         )
-        return connection_url
 
     @staticmethod
     def get_fully_qualified_name(
@@ -157,9 +155,10 @@ class MySQLConnector(SQLConnector):
                 elif datelike_type == "binary":
                     return cast(sqlalchemy.types.TypeEngine, mysql.BINARY())
 
-            maxlength = jsonschema_type.get("maxLength", 255)
+            # The maximum row size for the used table type, not counting BLOBs, is 65535.
+            maxlength = jsonschema_type.get("maxLength", 1000)
             data_type = mysql.VARCHAR(maxlength)
-            if maxlength <= 255:
+            if maxlength <= 1000:
                 return cast(sqlalchemy.types.TypeEngine, mysql.VARCHAR(maxlength))
             elif maxlength <= 65535:
                 return cast(sqlalchemy.types.TypeEngine, mysql.TEXT(maxlength))
@@ -171,8 +170,8 @@ class MySQLConnector(SQLConnector):
             return cast(sqlalchemy.types.TypeEngine, data_type)
 
         if self._jsonschema_type_check(jsonschema_type, ("integer",)):
-            minimum = jsonschema_type.get("minimum", -2147483648)
-            maximum = jsonschema_type.get("maximum", 2147483647)
+            minimum = jsonschema_type.get("minimum", -9223372036854775807)
+            maximum = jsonschema_type.get("maximum", 9223372036854775807)
 
             if minimum >= -128 and maximum <= 127:
                 return cast(sqlalchemy.types.TypeEngine, mysql.TINYINT(unsigned=False))
@@ -199,7 +198,7 @@ class MySQLConnector(SQLConnector):
             if 'multipleOf' in jsonschema_type:
                 return cast(sqlalchemy.types.TypeEngine, mysql.DECIMAL())
             else:
-                return cast(sqlalchemy.types.TypeEngine, mysql.types.FLOAT())
+                return cast(sqlalchemy.types.TypeEngine, mysql.FLOAT())
 
         if self._jsonschema_type_check(jsonschema_type, ("boolean",)):
             return cast(sqlalchemy.types.TypeEngine, mysql.BOOLEAN())
@@ -544,7 +543,7 @@ class MySQLSink(SQLSink):
 
             # Create a temp table (Creates from the table above)
             self.logger.info(f"Creating temp table {self.full_table_name}")
-            self.connector.create_temp_table_from_table(
+            self._connector.create_temp_table_from_table(
                 from_table_name=self.full_table_name,
                 temp_table_name=tmp_table_name
             )
@@ -560,7 +559,6 @@ class MySQLSink(SQLSink):
             self.merge_upsert_from_table(
                 from_table_name=tmp_table_name,
                 to_table_name=self.full_table_name,
-                schema=schema,
                 join_keys=join_keys,
             )
 
@@ -574,9 +572,9 @@ class MySQLSink(SQLSink):
     def merge_upsert_from_table(self,
                                 from_table_name: str,
                                 to_table_name: str,
-                                schema: dict,
                                 join_keys: List[str],
                                 ) -> Optional[int]:
+
         """Merge upsert data from one table to another.
         Args:
             from_table_name: The source table name.
@@ -591,7 +589,7 @@ class MySQLSink(SQLSink):
         # issue here https://github.com/MeltanoLabs/target-postgres/issues/22
 
         join_keys = [self.conform_name(key, "column") for key in join_keys]
-        schema = self.conform_schema(schema)
+        schema = self.conform_schema(self.schema)
 
         join_condition = " and ".join(
             [f"temp.{key} = target.{key}" for key in join_keys]

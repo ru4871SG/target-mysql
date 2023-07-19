@@ -137,5 +137,7 @@ dmypy.json
 
 # Dev stuff
 config.json
-/poetry.lock
 /.idea/
+/_data/
+/.yamllint.yaml
+/poetry.lock

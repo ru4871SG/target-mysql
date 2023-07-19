@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "thk-target-mysql"
-version = "0.1.1"
+version = "0.1.2"
 description = "`target-mysql` is a Singer target for MySQL, built with the Meltano Singer SDK."
 authors = ["Taehwan Kwag <thkwag@gmail.com>"]
 keywords = [

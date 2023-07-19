@@ -184,6 +184,7 @@ def test_array_data(mysql_target):
     file_name = "array_data.singer"
     singer_file_to_target(file_name, mysql_target)
 
+
 def test_encoded_string_data(mysql_target):
     file_name = "encoded_strings.singer"
     singer_file_to_target(file_name, mysql_target)

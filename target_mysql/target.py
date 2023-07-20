@@ -62,6 +62,12 @@ class TargetMySQL(SQLTarget):
             description="MySQL database",
         ),
         th.Property(
+            "table_name_pattern",
+            th.StringType,
+            description="MySQL table name pattern",
+            default="${TABLE_NAME}"
+        ),
+        th.Property(
             "lower_case_table_names",
             th.BooleanType,
             description="Lower case table names",

@@ -87,7 +87,7 @@ def get_table_cols(table_name):
 
 def drop_table(table_name):
     engine = get_engine()
-    engine.execute(f"DROP TABLE {table_name}")
+    engine.execute(f"DROP TABLE if exists {table_name}")
 
 
 # this test should throw an exception

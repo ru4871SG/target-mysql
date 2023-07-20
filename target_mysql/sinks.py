@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import string
 import typing as t
 from typing import Any, Dict, Iterable, List, Optional, cast
 
@@ -33,6 +34,7 @@ class MySQLConnector(SQLConnector):
     allow_column_alter: bool = False  # Whether altering column types is supported.
     allow_merge_upsert: bool = False  # Whether MERGE UPSERT is supported.
     allow_temp_tables: bool = True  # Whether temp tables are supported.
+    table_name_pattern: str = "${TABLE_NAME}"  # The pattern to use for temp table names.
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -60,8 +62,8 @@ class MySQLConnector(SQLConnector):
             database=config["database"],
         )
 
-    @staticmethod
     def get_fully_qualified_name(
+            self,
             table_name: str | None = None,
             schema_name: str | None = None,
             db_name: str | None = None,
@@ -81,14 +83,18 @@ class MySQLConnector(SQLConnector):
         Returns:
             The fully qualified name as a string.
         """
-        parts = []
+        table_name_pattern = self.config.get("table_name_pattern")
+        table_name_pattern = string.Template(table_name_pattern).substitute({"TABLE_NAME": table_name})
+        if table_name_pattern == "" or table_name_pattern is None:
+            table_name_pattern = table_name
 
+        parts = []
         if db_name:
             parts.append(db_name)
         if schema_name:
             parts.append(schema_name)
         if table_name:
-            parts.append(table_name)
+            parts.append(table_name_pattern)
 
         if not parts:
             raise ValueError(

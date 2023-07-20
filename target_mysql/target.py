@@ -96,16 +96,24 @@ class TargetMySQL(SQLTarget):
                     for key, value in data.get('record', {}).items():
                         if value is not None:
                             continue
-                        data_type = self.schema_properties[key]['type']
-                        print(key, value, data_type)
-                        if data_type == "string":
+
+                        # https://json-schema.org/understanding-json-schema/reference/type.html
+                        _type = self.schema_properties[key]['type']
+                        data_types = _type if isinstance(_type, list) else [_type]
+
+                        if "null" in data_types:
+                            continue
+                        if "string" in data_types:
                             data['record'][key] = ""
-                        elif data_type == "object":
+                        elif "object" in data_types:
                             data['record'][key] = {}
-                        elif data_type == "array":
+                        elif "array" in data_types:
                             data['record'][key] = []
+                        elif "boolean" in data_types:
+                            data['record'][key] = False
                         else:
                             data['record'][key] = 0
+
                 processed_input.write(json.dumps(data) + '\n')
             processed_input.seek(0)
             return super()._process_lines(processed_input)

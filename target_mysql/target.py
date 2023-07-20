@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import io
+import simplejson as json
+
 from singer_sdk import typing as th
 from singer_sdk.target_base import SQLTarget
+import typing as t
 
 from target_mysql.sinks import (
     MySQLSink,
@@ -14,6 +18,8 @@ class TargetMySQL(SQLTarget):
     """Sample target for MySQL."""
 
     name = "target-mysql"
+
+    default_sink_class = MySQLSink
 
     config_jsonschema = th.PropertiesList(
         th.Property(
@@ -66,10 +72,45 @@ class TargetMySQL(SQLTarget):
             th.BooleanType,
             description="Allow column alter",
             default=False
-        )
+        ),
+        th.Property(
+            "replace_null",
+            th.BooleanType,
+            description="Replace null to blank",
+            default=False
+        ),
+
     ).to_dict()
 
-    default_sink_class = MySQLSink
+    schema_properties = {}
+
+    def _process_lines(self, file_input: t.IO[str]) -> t.Counter[str]:
+        if self.config.get("replace_null", False):
+            processed_input = io.StringIO()
+            for line in file_input:
+                data = self.deserialize_json(line.strip())
+
+                if data.get('type', '') == 'SCHEMA':
+                    self.schema_properties = data['schema']['properties']
+                elif data.get('type', '') == 'RECORD':
+                    for key, value in data.get('record', {}).items():
+                        if value is not None:
+                            continue
+                        data_type = self.schema_properties[key]['type']
+                        print(key, value, data_type)
+                        if data_type == "string":
+                            data['record'][key] = ""
+                        elif data_type == "object":
+                            data['record'][key] = {}
+                        elif data_type == "array":
+                            data['record'][key] = []
+                        else:
+                            data['record'][key] = 0
+                processed_input.write(json.dumps(data) + '\n')
+            processed_input.seek(0)
+            return super()._process_lines(processed_input)
+        else:
+            return super()._process_lines(file_input)
 
 
 if __name__ == "__main__":

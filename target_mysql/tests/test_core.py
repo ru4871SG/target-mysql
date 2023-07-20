@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 import sqlalchemy
+from jsonschema.exceptions import ValidationError
 from singer_sdk.exceptions import RecordsWithoutSchemaException, MissingKeyPropertiesError
 from sqlalchemy import create_engine
 
@@ -17,7 +18,7 @@ parent_directory = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 config_path = os.path.join(parent_directory, "config.json")
 
 with open(config_path, "r") as f:
-    config_data = json.load(f)
+    config_data: dict = json.load(f)
 
 
 @pytest.fixture()
@@ -84,6 +85,11 @@ def get_table_cols(table_name):
     return columns
 
 
+def drop_table(table_name):
+    engine = get_engine()
+    engine.execute(f"DROP TABLE {table_name}")
+
+
 # this test should throw an exception
 def test_record_before_schema(mysql_target):
     with pytest.raises(RecordsWithoutSchemaException) as e_info:
@@ -132,17 +138,35 @@ def test_schema_no_properties(mysql_target):
 
 
 # test that data is correct
-def test_schema_updates(mysql_target):
-    allow_column_alter = False
-    if "allow_column_alter" in config_data:
-        allow_column_alter = config_data["allow_column_alter"]
-
+def test_schema_updates_1(mysql_target):
     file_name = "schema_updates.singer"
-    if allow_column_alter:
+
+    drop_table("test_schema_updates")
+
+    conf_key = "allow_column_alter"
+    orig_conf = config_data.get(conf_key, True)
+
+    config_data[conf_key] = False
+    mysql_target = TargetMySQL(config=config_data)
+    with pytest.raises(NotImplementedError) as e_info:
         singer_file_to_target(file_name, mysql_target)
-    else:
-        with pytest.raises(NotImplementedError) as e_info:
-            singer_file_to_target(file_name, mysql_target)
+
+    config_data[conf_key] = orig_conf
+
+
+def test_schema_updates_2(mysql_target):
+    file_name = "schema_updates.singer"
+
+    drop_table("test_schema_updates")
+
+    conf_key = "allow_column_alter"
+    orig_conf = config_data.get(conf_key, True)
+
+    config_data[conf_key] = True
+    mysql_target = TargetMySQL(config=config_data)
+    singer_file_to_target(file_name, mysql_target)
+
+    config_data[conf_key] = orig_conf
 
 
 # test that data is correct
@@ -220,3 +244,33 @@ def test_illegal_colnames(mysql_target):
 def test_numerics(mysql_target):
     file_name = "numerics.singer"
     singer_file_to_target(file_name, mysql_target)
+
+
+def test_integer_null_value(mysql_target):
+    file_name = "integer_null_value.singer"
+
+    orig_conf = config_data["replace_null"]
+
+    config_data["replace_null"] = True
+    singer_file_to_target(file_name, mysql_target)
+
+    with pytest.raises(ValidationError) as e_info:
+        config_data["replace_null"] = False
+        singer_file_to_target(file_name, mysql_target)
+
+    config_data["replace_null"] = orig_conf
+
+
+def test_string_null_value(mysql_target):
+    file_name = "string_null_value.singer"
+
+    orig_conf = config_data["replace_null"]
+
+    config_data["replace_null"] = True
+    singer_file_to_target(file_name, mysql_target)
+
+    with pytest.raises(ValidationError) as e_info:
+        config_data["replace_null"] = False
+        singer_file_to_target(file_name, mysql_target)
+
+    config_data["replace_null"] = orig_conf

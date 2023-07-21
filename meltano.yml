@@ -28,5 +28,6 @@ plugins:
     - name: database
     - name: lower_case_table_names
     - name: allow_column_alter
+    - name: replace_null
     - name: start_date
       value: '2010-01-01T00:00:00Z'

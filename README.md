@@ -1,97 +1,97 @@
 # target-mysql
 
-`target-mysql` is a Singer target for MySQL.
-(forked from [radbrt/target-oracle](https://github.com/radbrt/target-oracle))
+`target-mysql` is a MySQL-focused Singer target, crafted with the [Meltano Target SDK](https://sdk.meltano.com).
 
-Build with the [Meltano Target SDK](https://sdk.meltano.com).
 
-<!--
 
-Developer TODO: Update the below as needed to correctly describe the install procedure. For instance, if you do not have a PyPi repo, or if you want users to directly install from your git repo, you can modify this step as appropriate.
+Englisn | [한국어](./docs/README_ko.md)
+
 
 ## Installation
 
-Install from PyPi:
+Use PIP for installation:
 
 ```bash
-pipx install target-mysql
+pip install thk-target-mysql
 ```
 
-Install from GitHub:
+Or use GitHub Repo:
 
 ```bash
-pipx install git+https://github.com/ORG_NAME/target-mysql.git@main
+pipx install git+https://github.com/thkwag/target-mysql.git@main
 ```
-
--->
 
 ## Configuration
 
-### Accepted Config Options
+The available configuration options for `target-mysql` are:
 
-<!--
-Developer TODO: Provide a list of config options accepted by the target.
+| Configuration Options   | Description                                | Default            |
+|-------------------------|--------------------------------------------|--------------------|
+| host                    | MySQL server's hostname or IP address      |                    |
+| port                    | Port where MySQL server is running         |                    |
+| user                    | MySQL username                             |                    |
+| password                | MySQL user's password                      |                    |
+| database                | MySQL database's name                      |                    |
+| table_name_pattern      | MySQL table name pattern                   | "${TABLE_NAME}"    |
+| lower_case_table_names  | Use lowercase for table names or not       | true               |
+| allow_column_alter      | Allow column alterations or not            | false              |
+| replace_null            | Replace null values with others or not     | false              |
 
-This section can be created by copy-pasting the CLI output from:
+Configurations can be stored in a JSON configuration file and specified using the `--config` flag with `target-mysql`.
 
-```
-target-mysql --about --format=markdown
-```
--->
+### The `replace_null` Option (Experimental)
 
-A full list of supported settings and capabilities for this
-target is available by running:
+By enabling the `replace_null` option, null values are replaced with 'empty' equivalents based on their data type. Use with caution as it may alter data semantics.
 
-```bash
-target-mysql --about
-```
+When `replace_null` is `true`, null values are replaced as follows:
 
-### Configure using environment variables
+| JSON Schema Data Type | Null Value Replacement |
+|-----------------------|------------------------|
+| string                | Empty string(`""`)     |
+| number                | `0`                    |
+| object                | Empty object(`{}`)     |
+| array                 | Empty array(`[]`)      |
+| boolean               | `false`                |
+| null                  | null                   |
 
-This Singer target will automatically import any environment variables within the working directory's
-`.env` if the `--config=ENV` is provided, such that config values will be considered if a matching
-environment variable is set either in the terminal context or in the `.env` file.
-
-### Source Authentication and Authorization
-
-<!--
-Developer TODO: If your target requires special access on the destination system, or any special authentication requirements, provide those here.
--->
 
 ## Usage
 
-You can easily run `target-mysql` by itself or in a pipeline using [Meltano](https://meltano.com/).
+```bash
+cat <input_stream> | target-mysql --config <config.json>
+```
 
-### Executing the Target Directly
+- `<input_stream>`: Input data stream
+- `<config.json>`: JSON configuration file
+
+`target-mysql` reads data from a Singer Tap and writes it to a MySQL database. Run Singer Tap to generate data before launching `target-mysql`.
+
+Here's an example of using Singer Tap with `target-mysql`:
 
 ```bash
-target-mysql --version
-target-mysql --help
-# Test using the "Carbon Intensity" sample:
-tap-carbon-intensity | target-mysql --config /path/to/target-mysql-config.json
+tap-exchangeratesapi | target-mysql --config config.json
 ```
+
+In this case, `tap-exchangeratesapi` is a Singer Tap that generates exchange rate data. The data is passed to `target-mysql` through a pipe(`|`), and `target-mysql` writes it to a MySQL database. `config.json` contains `target-mysql` settings.
 
 ## Developer Resources
 
-Follow these instructions to contribute to this project.
-
-### Initialize your Development Environment
+### Initializing the Development Environment
 
 ```bash
 pipx install poetry
 poetry install
 ```
 
-### Create and Run Tests
+### Creating and Running Tests
 
-Create tests within the `target_mysql/tests` subfolder and
-  then run:
+Create tests in the `target_mysql/tests` subfolder and run:
 
 ```bash
 poetry run pytest
 ```
 
-You can also test the `target-mysql` CLI interface directly using `poetry run`:
+Use `poetry run` to test `target-mysql` CLI interface:
 
 ```bash
 poetry run target-mysql --help
@@ -99,35 +99,36 @@ poetry run target-mysql --help
 
 ### Testing with [Meltano](https://meltano.com/)
 
-_**Note:** This target will work in any Singer environment and does not require Meltano.
-Examples here are for convenience and to streamline end-to-end orchestration scenarios._
+_**Note:** This target functions within a Singer environment and does not require Meltano._
 
-<!--
-Developer TODO:
-Your project comes with a custom `meltano.yml` project file already created. Open the `meltano.yml` and follow any "TODO" items listed in
-the file.
--->
-
-Next, install Meltano (if you haven't already) and any needed plugins:
+Firstly, install Meltano and necessary plugins:
 
 ```bash
-# Install meltano
+# Install Meltano
 pipx install meltano
-# Initialize meltano within this directory
+
+# Initialize Meltano in this directory
 cd target-mysql
 meltano install
 ```
 
-Now you can test and orchestrate using Meltano:
+Then, test and orchestrate with Meltano:
 
 ```bash
-# Test invocation:
+# Call tests:
 meltano invoke target-mysql --version
-# OR run a test `elt` pipeline with the Carbon Intensity sample tap:
-meltano elt tap-carbon-intensity target-mysql
+
+# Or execute pipeline with Carbon Intensity sample tap:
+meltano run tap-carbon-intensity target-mysql
 ```
 
-### SDK Dev Guide
+### SDK Development Guide
 
-See the [dev guide](https://sdk.meltano.com/en/latest/dev_guide.html) for more instructions on how to use the Meltano Singer SDK to
-develop your own Singer taps and targets.
+For in-depth instructions on crafting Singer Taps and Targets using Meltano Singer SDK, see the [Development Guide](https://sdk.meltano.com/en/latest/dev_guide.html).
+
+## Reference Links
+
+- [Meltano Target SDK Documentation](https://sdk.meltano.com)
+- [Singer Specification](https://github.com/singer-io/getting-started/blob/master/docs/SPEC.md)
+- [Meltano](https://meltano.com/)
+- [Singer.io](https://www.singer.io/)

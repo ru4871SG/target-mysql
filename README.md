@@ -1,41 +1,43 @@
 # target-mysql
 
-`target-mysql` is a Singer target for Oracle, Build with the [Meltano Target SDK](https://sdk.meltano.com).
+`target-mysql` is a MySQL-focused Singer target, crafted with the [Meltano Target SDK](https://sdk.meltano.com).
 
 
-<!--
 
-Developer TODO: Update the below as needed to correctly describe the install procedure. For instance, if you do not have a PyPi repo, or if you want users to directly install from your git repo, you can modify this step as appropriate.
+Englisn | [한국어](./docs/README_ko.md)
+
 
 ## Installation
 
-Install from PyPi:
+Use PIP for installation:
 
 ```bash
-pipx install target-oracle
+pip install thk-target-mysql
 ```
 
-Install from GitHub:
+Or use GitHub Repo:
 
 ```bash
-pipx install git+https://github.com/ORG_NAME/target-oracle.git@main
+pipx install git+https://github.com/thkwag/target-mysql.git@main
 ```
-
--->
 
 ## Configuration
 
-### Accepted Config Options
+The available configuration options for `target-mysql` are:
 
-<!--
-Developer TODO: Provide a list of config options accepted by the target.
+| Configuration Options   | Description                                | Default            |
+|-------------------------|--------------------------------------------|--------------------|
+| host                    | MySQL server's hostname or IP address      |                    |
+| port                    | Port where MySQL server is running         |                    |
+| user                    | MySQL username                             |                    |
+| password                | MySQL user's password                      |                    |
+| database                | MySQL database's name                      |                    |
+| table_name_pattern      | MySQL table name pattern                   | "${TABLE_NAME}"    |
+| lower_case_table_names  | Use lowercase for table names or not       | true               |
+| allow_column_alter      | Allow column alterations or not            | false              |
+| replace_null            | Replace null values with others or not     | false              |
 
-This section can be created by copy-pasting the CLI output from:
-
-```
-target-oracle --about --format=markdown
-```
--->
+Configurations can be stored in a JSON configuration file and specified using the `--config` flag with `target-mysql`.
 
 ### The `replace_null` Option (Experimental)
 

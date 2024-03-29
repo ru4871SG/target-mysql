@@ -31,3 +31,4 @@ plugins:
     - name: replace_null
     - name: start_date
       value: '2010-01-01T00:00:00Z'
+    - name: freeze_schema

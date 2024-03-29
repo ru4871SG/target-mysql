@@ -3,41 +3,39 @@
 `target-mysql` is a Singer target for Oracle, Build with the [Meltano Target SDK](https://sdk.meltano.com).
 
 
+<!--
 
-English | [한국어](./docs/README_ko.md)
-
+Developer TODO: Update the below as needed to correctly describe the install procedure. For instance, if you do not have a PyPi repo, or if you want users to directly install from your git repo, you can modify this step as appropriate.
 
 ## Installation
 
-Use PIP for installation:
+Install from PyPi:
 
 ```bash
-pip install thk-target-mysql
+pipx install target-oracle
 ```
 
-Or use GitHub Repo:
+Install from GitHub:
 
 ```bash
-pipx install git+https://github.com/thkwag/target-mysql.git@main
+pipx install git+https://github.com/ORG_NAME/target-oracle.git@main
 ```
+
+-->
 
 ## Configuration
 
-The available configuration options for `target-mysql` are:
+### Accepted Config Options
 
-| Configuration Options   | Description                                | Default            |
-|-------------------------|--------------------------------------------|--------------------|
-| host                    | MySQL server's hostname or IP address      |                    |
-| port                    | Port where MySQL server is running         |                    |
-| user                    | MySQL username                             |                    |
-| password                | MySQL user's password                      |                    |
-| database                | MySQL database's name                      |                    |
-| table_name_pattern      | MySQL table name pattern                   | "${TABLE_NAME}"    |
-| lower_case_table_names  | Use lowercase for table names or not       | true               |
-| allow_column_alter      | Allow column alterations or not            | false              |
-| replace_null            | Replace null values with others or not     | false              |
+<!--
+Developer TODO: Provide a list of config options accepted by the target.
 
-Configurations can be stored in a JSON configuration file and specified using the `--config` flag with `target-mysql`.
+This section can be created by copy-pasting the CLI output from:
+
+```
+target-oracle --about --format=markdown
+```
+-->
 
 ### The `replace_null` Option (Experimental)
 

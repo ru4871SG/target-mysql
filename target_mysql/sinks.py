@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import string
+import time
 import typing as t
 from typing import Any, Dict, Iterable, List, Optional, cast
 
@@ -38,10 +39,9 @@ class MySQLConnector(SQLConnector):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.logger.setLevel(logging.DEBUG)
+        # self.logger.setLevel(logging.DEBUG)
 
-        if "allow_column_alter" in super().config:
-            self.allow_column_alter = super().config.get("allow_column_alter")
+        self.allow_column_alter = super().config.get("allow_column_alter", False)
 
     def get_sqlalchemy_url(self, config: dict) -> URL:
         """Generates a SQLAlchemy URL for MySQL.
@@ -288,15 +288,17 @@ class MySQLConnector(SQLConnector):
             NotImplementedError: if adding columns is not supported.
         """
         if not self.allow_column_add:
-            raise NotImplementedError("Adding columns is not supported.")
+            # raise NotImplementedError("Adding columns is not supported.")
+            return
 
-        if column_name.startswith("_"):
-            column_name = f"x{column_name}"
+        # if column_name.startswith("_"):
+        #     column_name = f"x{column_name}"
 
         create_column_clause = sqlalchemy.schema.CreateColumn(
             sqlalchemy.Column(
                 column_name,
                 sql_type,
+                quote=False
             )
         )
 
@@ -311,24 +313,24 @@ class MySQLConnector(SQLConnector):
                 f"on table '{full_table_name}'."
             ) from e
 
-    def create_temp_table_from_table(self, from_table_name, temp_table_name):
-        """Temp table from another table."""
-
-        try:
-            self.connection.execute(
-                f"""DROP TABLE {temp_table_name}"""
-            )
-        except Exception as e:
-            pass
-
-        ddl = f"""
-            CREATE TABLE {temp_table_name} AS (
-                SELECT * FROM {from_table_name}
-                WHERE 1=0
-            )
-        """
-
-        self.connection.execute(ddl)
+    # def create_temp_table_from_table(self, from_table_name, temp_table_name):
+    #     """Temp table from another table."""
+    #
+    #     try:
+    #         self.connection.execute(
+    #             f"""DROP TABLE {temp_table_name}"""
+    #         )
+    #     except Exception as e:
+    #         pass
+    #
+    #     ddl = f"""
+    #         CREATE TABLE {temp_table_name} AS (
+    #             SELECT * FROM {from_table_name}
+    #             WHERE 1=0
+    #         )
+    #     """
+    #
+    #     self.connection.execute(ddl)
 
     def create_empty_table(
             self,
@@ -498,31 +500,31 @@ class MySQLConnector(SQLConnector):
             # Nothing to do
             return
 
-        if not self.allow_column_alter:
-            raise NotImplementedError(
-                "Altering columns is not supported. "
-                f"Could not convert column '{full_table_name}.{column_name}' "
-                f"from '{current_type}' to '{compatible_sql_type}'."
-            )
-        try:
-            alter_sql = f"""ALTER TABLE {str(full_table_name)}
-                MODIFY {str(column_name)} {str(compatible_sql_type)}"""
-            self.logger.info("Altering with SQL: %s", alter_sql)
-            self.connection.execute(alter_sql)
-        except Exception as e:
-            raise RuntimeError(
-                f"Could not convert column '{full_table_name}.{column_name}' "
-                f"from '{current_type}' to '{compatible_sql_type}'."
-            ) from e
+        if self.allow_column_alter:
+            try:
+                alter_sql = f"""ALTER TABLE {str(full_table_name)}
+                    MODIFY {str(column_name)} {str(compatible_sql_type)}"""
+                self.logger.info("Altering with SQL: %s", alter_sql)
+                self.connection.execute(alter_sql)
+            except Exception as e:
+                raise RuntimeError(
+                    f"Could not convert column '{full_table_name}.{column_name}' "
+                    f"from '{current_type}' to '{compatible_sql_type}'."
+                ) from e
 
 
 class MySQLSink(SQLSink):
     """MySQL target sink class."""
 
+    MAX_SIZE_DEFAULT = 10000
+
     connector_class = MySQLConnector
 
     soft_delete_column_name = "x_sdc_deleted_at"
     version_column_name = "x_sdc_table_version"
+
+    start_time_global = time.time()
+    inserted_records = 0
 
     # @property
     # def schema_name(self) -> Optional[str]:
@@ -546,7 +548,7 @@ class MySQLSink(SQLSink):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.logger.setLevel(logging.DEBUG)
+        # self.logger.setLevel(logging.DEBUG)
 
     def process_batch(self, context: dict) -> None:
         """Process a batch with the given batch context.
@@ -556,7 +558,6 @@ class MySQLSink(SQLSink):
             context: Stream partition or context dictionary.
         """
         # First we need to be sure the main table is already created
-
         conformed_records = (
             [self.conform_record(record) for record in context["records"]]
             if isinstance(context["records"], list)
@@ -566,91 +567,99 @@ class MySQLSink(SQLSink):
         join_keys = [self.conform_name(key, "column") for key in self.key_properties]
         schema = self.conform_schema(self.schema)
 
-        if self.key_properties:
-            self.logger.info(f"Preparing table {self.full_table_name}")
-            self.connector.prepare_table(
-                full_table_name=self.full_table_name,
-                schema=schema,
-                primary_keys=self.key_properties,
-                as_temp_table=False,
-            )
-
-            tmp_table_name = self.full_table_name + "_temp"
-
-            # Create a temp table (Creates from the table above)
-            self.logger.info(f"Creating temp table {self.full_table_name}")
-            self._connector.create_temp_table_from_table(
-                from_table_name=self.full_table_name,
-                temp_table_name=tmp_table_name
-            )
-
-            # Insert into temp table
-            self.bulk_insert_records(
-                full_table_name=tmp_table_name,
-                schema=schema,
-                records=conformed_records,
-            )
-            # Merge data from Temp table to main table
-            self.logger.info(f"Merging data from temp table to {self.full_table_name}")
-            self.merge_upsert_from_table(
-                from_table_name=tmp_table_name,
-                to_table_name=self.full_table_name,
-                join_keys=join_keys,
-            )
-
-        else:
-            self.bulk_insert_records(
-                full_table_name=self.full_table_name,
-                schema=schema,
-                records=conformed_records,
-            )
-
-    def merge_upsert_from_table(self,
-                                from_table_name: str,
-                                to_table_name: str,
-                                join_keys: List[str],
-                                ) -> Optional[int]:
-
-        """Merge upsert data from one table to another.
-        Args:
-            from_table_name: The source table name.
-            to_table_name: The destination table name.
-            join_keys: The merge upsert keys, or `None` to append.
-            schema: Singer Schema message.
-        Return:
-            The number of records copied, if detectable, or `None` if the API does not
-            report number of records affected/inserted.
-        """
-        # TODO think about sql injeciton,
-        # issue here https://github.com/MeltanoLabs/target-postgres/issues/22
-
-        join_keys = [self.conform_name(key, "column") for key in join_keys]
-        schema = self.conform_schema(self.schema)
-
-        join_condition = " and ".join(
-            [f"temp.{key} = target.{key}" for key in join_keys]
+        self.bulk_insert_records(
+            full_table_name=self.full_table_name,
+            schema=schema,
+            records=conformed_records,
         )
 
-        upsert_on_condition = " and ".join(
-            [f"{key} = VALUES({key})" for key in join_keys]
-        )
+        # if self.key_properties:
+        #     self.logger.info(f"Preparing table {self.full_table_name}")
+        #     self.connector.prepare_table(
+        #         full_table_name=self.full_table_name,
+        #         schema=schema,
+        #         primary_keys=self.key_properties,
+        #         as_temp_table=False,
+        #     )
+        #
+        #     tmp_table_name = self.full_table_name + "_temp"
+        #
+        #     # Create a temp table (Creates from the table above)
+        #     self.logger.info(f"Creating temp table {self.full_table_name}")
+        #     self._connector.create_temp_table_from_table(
+        #         from_table_name=self.full_table_name,
+        #         temp_table_name=tmp_table_name
+        #     )
+        #
+        #     # Insert into temp table
+        #     self.bulk_insert_records(
+        #         full_table_name=tmp_table_name,
+        #         schema=schema,
+        #         records=conformed_records,
+        #     )
+        #     # Merge data from Temp table to main table
+        #     self.logger.info(f"Merging data from temp table to {self.full_table_name}")
+        #     self.merge_upsert_from_table(
+        #         from_table_name=tmp_table_name,
+        #         to_table_name=self.full_table_name,
+        #         join_keys=join_keys,
+        #     )
+        #
+        # else:
+        #     self.bulk_insert_records(
+        #         full_table_name=self.full_table_name,
+        #         schema=schema,
+        #         records=conformed_records,
+        #     )
 
-        merge_sql = f"""
-            INSERT INTO {to_table_name} ({", ".join(schema["properties"].keys())})
-                SELECT {", ".join(schema["properties"].keys())}
-                FROM 
-                    {from_table_name} temp
-            ON DUPLICATE KEY UPDATE 
-                {upsert_on_condition}
-        """
-
-        self.logger.info("Merging with SQL: %s", merge_sql)
-
-        self.connection.execute(merge_sql)
-
-        self.connection.execute("COMMIT")
-
-        self.connection.execute(f"DROP TABLE {from_table_name}")
+    # def merge_upsert_from_table(self,
+    #                             from_table_name: str,
+    #                             to_table_name: str,
+    #                             join_keys: List[str],
+    #                             ) -> Optional[int]:
+    #
+    #     """Merge upsert data from one table to another.
+    #     Args:
+    #         from_table_name: The source table name.
+    #         to_table_name: The destination table name.
+    #         join_keys: The merge upsert keys, or `None` to append.
+    #         schema: Singer Schema message.
+    #     Return:
+    #         The number of records copied, if detectable, or `None` if the API does not
+    #         report number of records affected/inserted.
+    #     """
+    #     # TODO think about sql injeciton,
+    #     # issue here https://github.com/MeltanoLabs/target-postgres/issues/22
+    #
+    #     join_keys = [self.conform_name(key, "column") for key in join_keys]
+    #     schema = self.conform_schema(self.schema)
+    #
+    #     join_condition = " and ".join(
+    #         [f"temp.{key} = target.{key}" for key in join_keys]
+    #     )
+    #
+    #     upsert_on_condition = ", ".join(
+    #         [f"{to_table_name}.{key} = temp.{key}" for key in join_keys]
+    #     )
+    #
+    #     merge_sql = f"""
+    #         INSERT INTO {to_table_name} ({", ".join(schema["properties"].keys())})
+    #             SELECT {", ".join(schema["properties"].keys())}
+    #             FROM
+    #                 {from_table_name} temp
+    #         ON DUPLICATE KEY UPDATE
+    #             {upsert_on_condition}
+    #     """
+    #
+    #     self.logger.debug("Merging with SQL: %s", merge_sql)
+    #
+    #     self.connection.execute(merge_sql)
+    #
+    #     self.connection.execute("COMMIT")
+    #
+    #     self.connection.execute(f"DROP TABLE {from_table_name}")
+    #
+    #     self.logger.info(f"Dropped temp table '{from_table_name}'")
 
     def bulk_insert_records(
             self,
@@ -674,10 +683,17 @@ class MySQLSink(SQLSink):
             full_table_name,
             schema,
         )
+        if self.key_properties:
+            join_keys = [self.conform_name(key, "column") for key in self.key_properties]
+            upsert_on_condition = ", ".join(
+                [f"{key}=VALUES({key})" for key in join_keys]
+            )
+            insert_sql += f" ON DUPLICATE KEY UPDATE {upsert_on_condition}"
+
         if isinstance(insert_sql, str):
             insert_sql = sqlalchemy.text(insert_sql)
 
-        self.logger.info("Inserting with SQL: %s", insert_sql)
+        self.logger.debug("Inserting with SQL: %s", insert_sql)
 
         columns = self.column_representation(schema)
 
@@ -701,6 +717,15 @@ class MySQLSink(SQLSink):
         self.connection.execute("COMMIT")
 
         if isinstance(records, list):
+            self.inserted_records += len(records)
+            elapsed_time_global = time.time() - self.start_time_global
+            avg_per_minute = (self.inserted_records / elapsed_time_global) * 60
+
+            self.logger.info(f"Table '{full_table_name}'")
+            self.logger.info(f"  - Total inserted records: {format(int(self.inserted_records), ',')} ")
+            self.logger.info(f"  - Total time elapsed: {self.format_time(elapsed_time_global)}")
+            self.logger.info(f"  - Average processed per minute: {format(int(avg_per_minute), ',')}")
+
             return len(records)  # If list, we can quickly return record count.
 
         return None  # Unknown record count.
@@ -747,10 +772,21 @@ class MySQLSink(SQLSink):
         # strip non-alphanumeric characters except _.
         name = re.sub(r"[^a-zA-Z0-9_]+", "_", name)
 
-        # Move leading underscores to the end of the name
-        name = self.move_leading_underscores(name)
+        if super().config.get("move_leading_underscores", True):
+            # Move leading underscores to the end of the name
+            name = self.move_leading_underscores(name)
 
-        # convert to snakecase
-        name = self.snakecase(name)
-        # replace leading digit
-        return replace_leading_digit(name)
+        if super().config.get("snakecase_names", True):
+            # convert to snakecase
+            name = self.snakecase(name)
+
+        if super().config.get("replace_leading_digit", True):
+            # replace leading digit
+            name = replace_leading_digit(name)
+
+        return name
+
+    def format_time(self, elapsed_time):
+        hours, remainder = divmod(int(elapsed_time), 3600)
+        minutes, seconds = divmod(remainder, 60)
+        return f"{hours}h {minutes}m {seconds}s"

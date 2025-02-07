@@ -516,7 +516,7 @@ class MySQLConnector(SQLConnector):
 class MySQLSink(SQLSink):
     """MySQL target sink class."""
 
-    MAX_SIZE_DEFAULT = 10000
+    MAX_SIZE_DEFAULT = 20000
 
     connector_class = MySQLConnector
 

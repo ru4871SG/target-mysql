@@ -769,21 +769,15 @@ class MySQLSink(SQLSink):
         Returns:
             The name transformed to snake case.
         """
-        # strip non-alphanumeric characters except _.
-        name = re.sub(r"[^a-zA-Z0-9_]+", "_", name)
-
-        if super().config.get("move_leading_underscores", True):
-            # Move leading underscores to the end of the name
+        if self.config.get("move_leading_underscores", True):
             name = self.move_leading_underscores(name)
-
-        if super().config.get("snakecase_names", True):
-            # convert to snakecase
+        
+        if self.config.get("snakecase_names", True):  # Now correctly uses self.config
             name = self.snakecase(name)
-
-        if super().config.get("replace_leading_digit", True):
-            # replace leading digit
+        
+        if self.config.get("replace_leading_digit", True):
             name = replace_leading_digit(name)
-
+        
         return name
 
     def format_time(self, elapsed_time):

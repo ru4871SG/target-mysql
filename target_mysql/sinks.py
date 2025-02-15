@@ -8,6 +8,7 @@ import re
 import string
 import time
 import typing as t
+from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Optional, cast
 
 import sqlalchemy
@@ -705,11 +706,16 @@ class MySQLSink(SQLSink):
             conformed_record = self.conform_record(record)
             for column in columns:
                 val = conformed_record.get(column.name)
-                self.logger.info(f"Processing column {column.name} with value type: {type(val)}")  # Add this log
                 if isinstance(val, (dict, list)):
-                    self.logger.info(f"Converting dict/list for column {column.name}")  # Add this log
                     try:
-                        val = json.dumps(val)
+                        # JSON encoder to handle Decimal
+                        class DecimalEncoder(json.JSONEncoder):
+                            def default(self, obj):
+                                if isinstance(obj, Decimal):
+                                    return str(obj)
+                                return super().default(obj)
+                        
+                        val = json.dumps(val, cls=DecimalEncoder)
                     except TypeError as e:
                         self.logger.error(f"JSON serialization error found for column {column.name}: {e}")
                         self.logger.error(f"Value causing error: {val}")

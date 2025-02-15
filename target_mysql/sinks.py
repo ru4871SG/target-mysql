@@ -704,11 +704,16 @@ class MySQLSink(SQLSink):
             insert_record = {}
             conformed_record = self.conform_record(record)
             for column in columns:
-                # insert_record[column.name] = conformed_record.get(column.name)
-
                 val = conformed_record.get(column.name)
-                if (isinstance(val, Dict) or isinstance(val, List)):
-                    val = json.dumps(val)
+                self.logger.info(f"Processing column {column.name} with value type: {type(val)}")  # Add this log
+                if isinstance(val, (dict, list)):
+                    self.logger.info(f"Converting dict/list for column {column.name}")  # Add this log
+                    try:
+                        val = json.dumps(val)
+                    except TypeError as e:
+                        self.logger.error(f"JSON serialization error found for column {column.name}: {e}")
+                        self.logger.error(f"Value causing error: {val}")
+                        raise
 
                 insert_record[column.name] = val
             insert_records.append(insert_record)

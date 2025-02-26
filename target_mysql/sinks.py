@@ -668,18 +668,7 @@ class MySQLSink(SQLSink):
             schema: dict,
             records: Iterable[Dict[str, Any]],
     ) -> Optional[int]:
-        """Bulk insert records to an existing destination table.
-        The default implementation uses a generic SQLAlchemy bulk insert operation.
-        This method may optionally be overridden by developers in order to provide
-        faster, native bulk uploads.
-        Args:
-            full_table_name: the target table name.
-            schema: the JSON schema for the new table, to be used when inferring column
-                names.
-            records: the input records.
-        Returns:
-            True if table exists, False if not, None if unsure or undetectable.
-        """
+        """Bulk insert records with batching to handle connection timeouts."""
         insert_sql = self.generate_insert_statement(
             full_table_name,
             schema,
@@ -695,51 +684,86 @@ class MySQLSink(SQLSink):
             insert_sql = sqlalchemy.text(insert_sql)
 
         self.logger.debug("Inserting with SQL: %s", insert_sql)
-
         columns = self.column_representation(schema)
+        
+        # Convert iterable records to a list so we can process in batches
+        record_list = list(records) if not isinstance(records, list) else records
+        total_records = len(record_list)
+        batch_size = self.config.get("batch_size", 100)  # Default to 100 if not specified
+        
+        self.logger.info(f"Processing {total_records} records in batches of {batch_size}")
+        
+        records_inserted = 0
+        last_successful_record = None
+        
+        # Process in batches
+        for i in range(0, total_records, batch_size):
+            batch = record_list[i:i+batch_size]
+            insert_records = []
+            
+            for record in batch:
+                insert_record = {}
+                conformed_record = self.conform_record(record)
+                for column in columns:
+                    val = conformed_record.get(column.name)
+                    if isinstance(val, (dict, list)):
+                        try:
+                            # JSON encoder to handle Decimal
+                            class DecimalEncoder(json.JSONEncoder):
+                                def default(self, obj):
+                                    if isinstance(obj, Decimal):
+                                        return str(obj)
+                                    return super().default(obj)
+                            
+                            val = json.dumps(val, cls=DecimalEncoder)
+                        except TypeError as e:
+                            self.logger.error(f"JSON serialization error found for column {column.name}: {e}")
+                            self.logger.error(f"Value causing error: {val}")
+                            raise
 
-        # temporary fix to ensure missing properties are added
-        insert_records = []
+                    insert_record[column.name] = val
+                insert_records.append(insert_record)
+            
+            try:
+                # Execute the batch
+                self.connection.execute(insert_sql, insert_records)
+                self.connection.execute("COMMIT")
+                
+                # Track progress
+                records_inserted += len(batch)
+                self.inserted_records += len(batch)
+                
+                # Store the last successful record for logging purposes
+                if batch:
+                    last_successful_record = batch[-1]
+                    # Log every batch completion with key information
+                    if self.key_properties:
+                        key_info = {k: last_successful_record.get(k) for k in self.key_properties if k in last_successful_record}
+                        self.logger.info(f"Successfully inserted batch ending with record: {key_info}")
+                
+                # Log overall progress
+                self.logger.info(f"Progress: {records_inserted}/{total_records} records inserted")
+                
+            except Exception as e:
+                self.logger.error(f"Error inserting batch: {e}")
+                # Log the last successful record before the error
+                if last_successful_record and self.key_properties:
+                    key_info = {k: last_successful_record.get(k) for k in self.key_properties if k in last_successful_record}
+                    self.logger.error(f"Last successfully inserted record before error: {key_info}")
+                self.logger.error(f"Stopped at {records_inserted}/{total_records} records")
+                break  # Exit the loop on error
+        
+        # Log final stats
+        elapsed_time_global = time.time() - self.start_time_global
+        avg_per_minute = (self.inserted_records / elapsed_time_global) * 60 if elapsed_time_global > 0 else 0
 
-        for record in records:
-            insert_record = {}
-            conformed_record = self.conform_record(record)
-            for column in columns:
-                val = conformed_record.get(column.name)
-                if isinstance(val, (dict, list)):
-                    try:
-                        # JSON encoder to handle Decimal
-                        class DecimalEncoder(json.JSONEncoder):
-                            def default(self, obj):
-                                if isinstance(obj, Decimal):
-                                    return str(obj)
-                                return super().default(obj)
-                        
-                        val = json.dumps(val, cls=DecimalEncoder)
-                    except TypeError as e:
-                        self.logger.error(f"JSON serialization error found for column {column.name}: {e}")
-                        self.logger.error(f"Value causing error: {val}")
-                        raise
+        self.logger.info(f"Table '{full_table_name}'")
+        self.logger.info(f"  - Total inserted records: {format(int(self.inserted_records), ',')} ")
+        self.logger.info(f"  - Records inserted in this run: {records_inserted}")
+        self.logger.info(f"  - Total time elapsed: {self.format_time(elapsed_time_global)}")
+        self.logger.info(f"  - Average processed per minute: {format(int(avg_per_minute), ',')}")
 
-                insert_record[column.name] = val
-            insert_records.append(insert_record)
-
-        self.connection.execute(insert_sql, insert_records)
-        self.connection.execute("COMMIT")
-
-        if isinstance(records, list):
-            self.inserted_records += len(records)
-            elapsed_time_global = time.time() - self.start_time_global
-            avg_per_minute = (self.inserted_records / elapsed_time_global) * 60
-
-            self.logger.info(f"Table '{full_table_name}'")
-            self.logger.info(f"  - Total inserted records: {format(int(self.inserted_records), ',')} ")
-            self.logger.info(f"  - Total time elapsed: {self.format_time(elapsed_time_global)}")
-            self.logger.info(f"  - Average processed per minute: {format(int(avg_per_minute), ',')}")
-
-            return len(records)  # If list, we can quickly return record count.
-
-        return None  # Unknown record count.
+        return records_inserted
 
     def column_representation(
             self,

@@ -85,7 +85,13 @@ class TargetMySQL(SQLTarget):
             th.BooleanType,
             description="Replace null to blank",
             default=False
-        )
+        ),
+        th.Property(
+            "batch_size",
+            th.IntegerType,
+            description="Number of records to insert in a single batch",
+            default=100
+        ),
     ).to_dict()
 
     schema_properties = {}

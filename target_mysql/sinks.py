@@ -356,11 +356,12 @@ class MySQLConnector(SQLConnector):
             raise NotImplementedError("Temporary tables are not supported.")
 
         _ = partition_keys  # Not supported in generic implementation.
+        # Ignore primary keys completely
+        _ = primary_keys  # Not used since we're removing PK constraints
 
         _, schema_name, table_name = self.parse_full_table_name(full_table_name)
         meta = sqlalchemy.MetaData(schema=schema_name)
         columns: list[sqlalchemy.Column] = []
-        primary_keys = primary_keys or []
         try:
             properties: dict = schema["properties"]
         except KeyError:
@@ -369,7 +370,6 @@ class MySQLConnector(SQLConnector):
             )
 
         for property_name, property_jsonschema in properties.items():
-            is_primary_key = property_name in primary_keys
             columns.append(
                 sqlalchemy.Column(
                     property_name,
@@ -377,12 +377,8 @@ class MySQLConnector(SQLConnector):
                 )
             )
 
-        if primary_keys:
-            pk_constraint = PrimaryKeyConstraint(*primary_keys, name=f"{table_name}_PK")
-            _ = sqlalchemy.Table(table_name, meta, *columns, pk_constraint)
-        else:
-            _ = sqlalchemy.Table(table_name, meta, *columns)
-
+        # Always create table without primary key constraint
+        _ = sqlalchemy.Table(table_name, meta, *columns)
         meta.create_all(self._engine)
 
     def merge_sql_types(  # noqa
